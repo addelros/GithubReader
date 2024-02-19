@@ -111,7 +111,7 @@ class GithubReader(Reader):
 
         url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
         headers = {
-            "Authorization": "token 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",
+            "Authorization": "token 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",
             "Accept": "application/vnd.github.v3+json",
         }
         response = requests.get(url, headers=headers)
@@ -133,6 +133,63 @@ class GithubReader(Reader):
         )
         return files
 
+    def fetch_issues(self, owner: str, repo: str, token: str) -> list[dict]:
+        """Fetch issues from GitHub repository.
+        
+        :param owner: str - Owner of the GitHub repository.
+        :param repo: str - Name of the GitHub repository.
+        :param token: str - GitHub token for authentication.
+        :return: List[Dict] - List of issues.
+        """
+        url = f"https://api.github.com/repos/{owner}/{repo}/issues"
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        issues = []
+        page = 1
+        while True:
+            params = {"page": page, "per_page": 100}  # Fetch 100 issues per page
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            issues_page = response.json()
+            issues.extend(issues_page)
+            if len(issues_page) < 100:
+                break  # Break loop if less than 100 items returned (reached end of pages)
+            page += 1
+        return issues
+
+
+    def load_issues(self, owner: str, repo: str, token: str, document_type: str = "Issue") -> list[Document]:
+        """Ingest issues from GitHub repository into Weaviate.
+
+        :param owner: str - Owner of the GitHub repository.
+        :param repo: str - Name of the GitHub repository.
+        :param token: str - GitHub token for authentication.
+        :param document_type: str - Document type for issues.
+        :return: List[Document] - List of documents.
+        """
+        issues = self.fetch_issues(owner, repo, token)
+        documents = []
+
+        for issue in issues:
+            issue_title = issue["title"]
+            issue_body = issue["body"]
+            issue_link = issue["html_url"]
+            # You can customize how you want to ingest the issue data into documents
+            document = Document(
+                text=f"Title: {issue_title}\nBody: {issue_body}",
+                type=document_type,
+                name=issue_title,
+                link=issue_link,
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                reader=self.name
+            )
+            documents.append(document)
+
+        msg.good(f"Loaded {len(documents)} issues")
+        return documents
+
     def download_file(self, path: str, file_path: str) -> str:
         """Download files from Github based on filename
         @parameter path : str - Path to a GitHub repository
@@ -146,7 +203,7 @@ class GithubReader(Reader):
 
         url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}?ref={branch}"
         headers = {
-            "Authorization": "token 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",
+            "Authorization": "token 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",
             "Accept": "application/vnd.github.v3+json",
         }
         response = requests.get(url, headers=headers)
